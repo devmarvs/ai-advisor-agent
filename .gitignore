@@ -3,4 +3,3 @@
 *.key
 *.pem
 *.secret
-.env
