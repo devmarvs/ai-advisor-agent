@@ -1,1 +1,80 @@
-# Render deployment configuration
+services:
+  - type: web
+    name: ai-agent-api
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-agent-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: ai-agent-redis
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: HUBSPOT_CLIENT_ID
+        sync: false
+      - key: HUBSPOT_CLIENT_SECRET
+        sync: false
+      - key: OAUTH_REDIRECT_BASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: APP_BASE_URL
+        fromService:
+          type: web
+          name: ai-agent-api
+          property: url
+  - type: worker
+    name: ai-agent-worker
+    rootDir: worker
+    env: go
+    buildCommand: "go build -o worker ."
+    startCommand: "./worker"
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-agent-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: ai-agent-redis
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: HUBSPOT_CLIENT_ID
+        sync: false
+      - key: HUBSPOT_CLIENT_SECRET
+        sync: false
+  - type: redis
+    name: ai-agent-redis
+    ipAllowList: []
+  - type: pserv
+    name: ai-agent-migrations
+    rootDir: infra
+    env: docker
+    dockerCommand: >-
+      bash -lc "psql $DATABASE_URL -f migrations/0001_init.sql && psql $DATABASE_URL -f migrations/0002_indexes.sql"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-agent-postgres
+          property: connectionString
+    autoDeploy: false
+  - type: postgres
+    name: ai-agent-postgres
+    plan: standard
+    previewPlan: starter
+    databaseName: aiagent
+    user: aiagent
