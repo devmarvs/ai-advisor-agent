@@ -1,27 +1,23 @@
+
 package main
 
 import (
-	"ai-agent/api/handlers"
+  "database/sql"
+  "os"
 
-	"github.com/gin-gonic/gin"
+  "github.com/gin-gonic/gin"
+  _ "github.com/jackc/pgx/v5/stdlib"
+
+  "aiagentapi/handlers"
 )
 
 func SetupRouter() *gin.Engine {
-	r := gin.Default()
+  dsn := os.Getenv("DATABASE_URL")
+  db, _ := sql.Open("pgx", dsn)
 
-	// OAuth
-	r.GET("/oauth/google/start", handlers.GoogleStart)
-	r.GET("/oauth/google/callback", handlers.GoogleCallback)
-	r.GET("/oauth/hubspot/start", handlers.HubSpotStart)
-	r.GET("/oauth/hubspot/callback", handlers.HubSpotCallback)
-
-	// Chat & ingestion
-	r.POST("/chat", handlers.Chat)
-	r.POST("/ingest/gmail", handlers.ManualGmailIngest)
-
-	// Webhooks
-	r.POST("/webhooks/hubspot", handlers.HubSpotWebhook)
-	r.POST("/webhooks/calendar", handlers.CalendarWebhook)
-
-	return r
+  r := gin.Default()
+  r.GET("/healthz", func(c *gin.Context){ c.JSON(200, gin.H{"ok":true}) })
+  r.POST("/chat", handlers.Chat(db))
+  r.POST("/internal/cron/tick", handlers.CronTick(db))
+  return r
 }

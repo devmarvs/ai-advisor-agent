@@ -1,26 +1,29 @@
+
 package handlers
 
 import (
-	"net/http"
+  "database/sql"
+  "net/http"
 
-	"github.com/gin-gonic/gin"
+  "github.com/gin-gonic/gin"
+  "aiagentapi/storage"
 )
 
 type ChatRequest struct {
-	ThreadID string `json:"thread_id"`
-	Message  string `json:"message" binding:"required"`
+  ThreadID string `json:"thread_id"`
+  Message  string `json:"message" binding:"required"`
 }
 
-func Chat(c *gin.Context) {
-	var req ChatRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// TODO: 1) RAG search across email/note/instruction embeddings
-	// 2) LLM call with toolcapabilities
-	// 3) Stream tokens via SSE (or return once for now)
-
-	c.JSON(http.StatusOK, gin.H{"reply": "Scaffold is live. Connect Gmail + HubSpot next."})
+func Chat(db *sql.DB) gin.HandlerFunc {
+  return func(c *gin.Context) {
+    var req ChatRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+      c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+      return
+    }
+    // Demo enqueue
+    _, _ = storage.Enqueue(c, db, "00000000-0000-0000-0000-000000000000",
+      "send_email", map[string]any{"To":"test@example.com","Subject":"Hello","Body":"From scaffold"}, nil, nil)
+    c.JSON(200, gin.H{"reply":"Scaffold live. Enqueued a demo task."})
+  }
 }

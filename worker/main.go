@@ -1,18 +1,54 @@
+
 package main
 
 import (
-	"log"
-	"os"
-
-	"github.com/hibiken/asynq"
+  "context"
+  "database/sql"
+  "log"
+  "os"
+  "time"
+  _ "github.com/jackc/pgx/v5/stdlib"
 )
 
-func main() {
-	r := asynq.NewRedisClientOpt(asynq.RedisClientOpt{Addr: os.Getenv("REDIS_URL")})
-	srv := asynq.NewServer(r, asynq.Config{Concurrency: 10})
-	mux := asynq.NewServeMux()
-	RegisterHandlers(mux)
-	if err := srv.Run(mux); err != nil {
-		log.Fatal(err)
-	}
+func main(){
+  dsn := os.Getenv("DATABASE_URL")
+  db, err := sql.Open("pgx", dsn)
+  if err != nil { log.Fatal(err) }
+  defer db.Close()
+  db.SetMaxOpenConns(10)
+  log.Println("worker up")
+  for {
+    if err := claimAndRunOne(db); err != nil {
+      log.Printf("worker error: %v", err)
+      time.Sleep(2*time.Second)
+    }
+  }
+}
+
+func claimAndRunOne(db *sql.DB) error {
+  ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+  defer cancel()
+  tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+  if err != nil { return err }
+  var id int64; var kind, payload string
+  err = tx.QueryRowContext(ctx, `
+    UPDATE task SET status='running', claimed_at=now(), updated_at=now()
+     WHERE id = (
+       SELECT id FROM task
+        WHERE status IN ('pending')
+          AND (run_at IS NULL OR run_at <= now())
+        ORDER BY priority ASC, run_at NULLS FIRST, id
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1)
+    RETURNING id, kind, payload::text
+  `).Scan(&id, &kind, &payload)
+  if err == sql.ErrNoRows { tx.Commit(); time.Sleep(1500*time.Millisecond); return nil }
+  if err != nil { tx.Rollback(); return err }
+  if err := dispatch(ctx, tx, id, kind, payload); err != nil {
+    _, _ = tx.ExecContext(ctx, `UPDATE task SET status='failed', last_error=$2, updated_at=now() WHERE id=$1`, id, err.Error())
+    tx.Commit(); return err
+  }
+  _, err = tx.ExecContext(ctx, `UPDATE task SET status='done', updated_at=now() WHERE id=$1`, id)
+  if err != nil { tx.Rollback(); return err }
+  return tx.Commit()
 }

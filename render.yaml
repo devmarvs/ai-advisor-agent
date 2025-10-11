@@ -1,15 +1,16 @@
+
 services:
   - type: web
     name: ai-agent-api
+    rootDir: api
+    env: go
+    buildCommand: "go build -o server ."
+    startCommand: "./server"
+    autoDeploy: true
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: ai-agent-postgres
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: ai-agent-redis
           property: connectionString
       - key: OPENAI_API_KEY
         sync: false
@@ -30,6 +31,7 @@ services:
           type: web
           name: ai-agent-api
           property: url
+
   - type: worker
     name: ai-agent-worker
     rootDir: worker
@@ -42,11 +44,6 @@ services:
         fromDatabase:
           name: ai-agent-postgres
           property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: ai-agent-redis
-          property: connectionString
       - key: OPENAI_API_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -57,21 +54,36 @@ services:
         sync: false
       - key: HUBSPOT_CLIENT_SECRET
         sync: false
-  - type: redis
-    name: ai-agent-redis
-    ipAllowList: []
+
+  - type: web
+    name: ai-agent-web
+    rootDir: web
+    env: node
+    buildCommand: "npm ci && npm run build"
+    startCommand: "npm run start"
+    autoDeploy: true
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE
+        fromService:
+          type: web
+          name: ai-agent-api
+          property: url
+
   - type: pserv
     name: ai-agent-migrations
     rootDir: infra
     env: docker
-    dockerCommand: >-
-      bash -lc "psql $DATABASE_URL -f migrations/0001_init.sql && psql $DATABASE_URL -f migrations/0002_indexes.sql"
+    dockerCommand: >
+      bash -lc "psql $DATABASE_URL -f migrations/0001_init.sql &&
+                psql $DATABASE_URL -f migrations/0002_indexes.sql &&
+                psql $DATABASE_URL -f migrations/0003_task_queue_pg.sql"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: ai-agent-postgres
           property: connectionString
     autoDeploy: false
+
   - type: postgres
     name: ai-agent-postgres
     plan: standard
