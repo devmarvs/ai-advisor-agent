@@ -1,4 +1,3 @@
-
 ALTER TABLE task
   ADD COLUMN IF NOT EXISTS claimed_at timestamptz,
   ADD COLUMN IF NOT EXISTS priority int DEFAULT 100,

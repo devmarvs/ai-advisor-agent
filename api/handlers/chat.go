@@ -1,4 +1,3 @@
-
 package handlers
 
 import (
@@ -21,7 +20,6 @@ func Chat(db *sql.DB) gin.HandlerFunc {
       c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
       return
     }
-    // Demo enqueue
     _, _ = storage.Enqueue(c, db, "00000000-0000-0000-0000-000000000000",
       "send_email", map[string]any{"To":"test@example.com","Subject":"Hello","Body":"From scaffold"}, nil, nil)
     c.JSON(200, gin.H{"reply":"Scaffold live. Enqueued a demo task."})

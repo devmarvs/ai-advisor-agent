@@ -1,11 +1,9 @@
-
 package handlers
 
 import (
   "database/sql"
   "net/http"
   "os"
-
   "github.com/gin-gonic/gin"
 )
 
