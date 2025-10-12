@@ -25,23 +25,6 @@ func NewHubHandlers(db *sql.DB) *HubHandlers {
 	return &HubHandlers{DB: db}
 }
 
-// ConnectPage renders the simple “Connect your accounts” page.
-// This does NOT require DB; it just links out to the two OAuth starts.
-func ConnectPage(c *gin.Context) {
-	base := strings.TrimRight(os.Getenv("APP_BASE_URL"), "/")
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.String(http.StatusOK, `<!doctype html>
-<html>
-  <head><meta charset="utf-8"><title>Connect your accounts</title></head>
-  <body>
-    <h1>Connect your accounts</h1>
-    <p><a href="`+base+`/oauth/hubspot/start">Connect HubSpot</a></p>
-    <p><a href="`+base+`/oauth/google/start">Connect Google (Gmail + Calendar)</a></p>
-  </body>
-</html>`)
-}
-
 // HubSpotStart begins the HubSpot OAuth flow.
 // We build the authorization URL from env so we never hard-code scopes.
 func (h *HubHandlers) HubSpotStart(c *gin.Context) {
@@ -63,10 +46,9 @@ func (h *HubHandlers) HubSpotStart(c *gin.Context) {
 		return
 	}
 
-	// Scopes come from env (space- or comma-separated are both accepted here).
+	// Scopes come from env (space- or comma-separated are both accepted).
 	scopeEnv := os.Getenv("HUBSPOT_SCOPES")
 	if scopeEnv == "" {
-		// Minimal set we discussed; change in .env if you need more
 		scopeEnv = "oauth crm.objects.contacts.read crm.objects.contacts.write crm.objects.owners.read crm.schemas.contacts.read"
 	}
 	scopes := strings.Fields(strings.ReplaceAll(scopeEnv, ",", " "))
@@ -76,18 +58,15 @@ func (h *HubHandlers) HubSpotStart(c *gin.Context) {
 	v.Set("redirect_uri", redirect)
 	v.Set("response_type", "code")
 	v.Set("scope", strings.Join(scopes, " "))
-	// (optional) use a static state or a CSRF token you store in a cookie/session
-	v.Set("state", "hubspot_oauth")
+	v.Set("state", "hubspot_oauth") // replace with CSRF token if you have sessions
 
 	authURL := fmt.Sprintf("https://%s/oauth/authorize?%s", authHost, v.Encode())
 	c.Redirect(http.StatusFound, authURL)
 }
 
-// HubSpotCallback handles the OAuth redirect, exchanges code for tokens,
-// and stores the refresh token in DB.
+// HubSpotCallback handles the OAuth redirect, exchanges code for tokens, and stores the refresh token in DB.
 func (h *HubHandlers) HubSpotCallback(c *gin.Context) {
 	if h.DB == nil {
-		// this is the error you were seeing — now we ensure we never call the handler without DB wired
 		c.String(http.StatusInternalServerError, "DB not initialized for HubSpot handlers")
 		return
 	}
@@ -144,11 +123,9 @@ func (h *HubHandlers) HubSpotCallback(c *gin.Context) {
 		return
 	}
 
-	// Upsert into app_user by email. You likely have middleware that knows the
-	// signed-in app “user email”. If not yet wired, fallback to a single-user mode.
+	// Use signed-in user email if you have auth; otherwise demo fallback.
 	userEmail := c.GetString("user_email")
 	if userEmail == "" {
-		// single-user demo fallback; replace with your auth identity
 		userEmail = os.Getenv("DEMO_OWNER_EMAIL")
 	}
 	if userEmail == "" {
@@ -167,7 +144,6 @@ func (h *HubHandlers) HubSpotCallback(c *gin.Context) {
 		return
 	}
 
-	// Done — send user back to the Connect page
 	base := strings.TrimRight(os.Getenv("APP_BASE_URL"), "/")
 	if base == "" {
 		base = "/"
