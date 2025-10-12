@@ -24,11 +24,13 @@ func SetupRouter() *gin.Engine {
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 	r.GET("/connect", handlers.ConnectPage) // simple page with “Connect Google / Connect HubSpot” buttons
 
+	hub := handlers.NewHubHandlers(db)
+
 	// OAuth routes (to add below)
 	r.GET("/oauth/google/start", handlers.GoogleStart())
 	r.GET("/oauth/google/callback", handlers.GoogleCallback(db))
-	r.GET("/oauth/hubspot/start", handlers.HubSpotStart)
-	r.GET("/oauth/hubspot/callback", handlers.HubSpotCallback)
+	r.GET("/oauth/hubspot/start", hub.HubSpotStart)
+	r.GET("/oauth/hubspot/callback", hub.HubSpotCallback)
 	r.GET("/logout", func(c *gin.Context) { auth.Logout(c) })
 
 	// Authed

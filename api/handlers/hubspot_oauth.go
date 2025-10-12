@@ -1,11 +1,11 @@
 package handlers
 
 import (
-	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,136 +15,162 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// If your project exposes the DB differently, tweak this.
-var db *sql.DB
-
-// Inject a db from main or wherever you initialize it.
-func InitHubSpotHandlersDatabase(d *sql.DB) {
-	db = d
+// HubHandlers carries shared deps (e.g., DB) for HubSpot handlers
+type HubHandlers struct {
+	DB *sql.DB
 }
 
-// HubSpotStart simply redirects to the assembled authorize URL.
-// Useful for /oauth/hubspot/start routes.
-func HubSpotStart(c *gin.Context) {
-	authURL := os.Getenv("HUBSPOT_AUTH_URL")
-	if authURL == "" {
-		// Fallback build (same logic used in ConnectPage)
-		clientID := os.Getenv("HUBSPOT_CLIENT_ID")
-		redirectURI := os.Getenv("HUBSPOT_REDIRECT_URI")
-		scopes := os.Getenv("HUBSPOT_SCOPES")
-		portalID := os.Getenv("HUBSPOT_PORTAL_ID")
-		if clientID == "" || redirectURI == "" || scopes == "" {
-			c.String(http.StatusBadRequest, "HubSpot env not configured")
-			return
-		}
-		u, _ := url.Parse("https://app.hubspot.com/oauth/authorize")
-		q := u.Query()
-		q.Set("client_id", clientID)
-		q.Set("redirect_uri", redirectURI)
-		q.Set("response_type", "code")
-		q.Set("scope", scopes)
-		if portalID != "" {
-			q.Set("portalId", portalID)
-		}
-		q.Set("prompt", "consent")
-		q.Set("state", "hubspot_oauth")
-		u.RawQuery = q.Encode()
-		authURL = u.String()
+// NewHubHandlers sets up a handler set with DB
+func NewHubHandlers(db *sql.DB) *HubHandlers {
+	return &HubHandlers{DB: db}
+}
+
+// ConnectPage renders the simple “Connect your accounts” page.
+// This does NOT require DB; it just links out to the two OAuth starts.
+func ConnectPage(c *gin.Context) {
+	base := strings.TrimRight(os.Getenv("APP_BASE_URL"), "/")
+
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, `<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>Connect your accounts</title></head>
+  <body>
+    <h1>Connect your accounts</h1>
+    <p><a href="`+base+`/oauth/hubspot/start">Connect HubSpot</a></p>
+    <p><a href="`+base+`/oauth/google/start">Connect Google (Gmail + Calendar)</a></p>
+  </body>
+</html>`)
+}
+
+// HubSpotStart begins the HubSpot OAuth flow.
+// We build the authorization URL from env so we never hard-code scopes.
+func (h *HubHandlers) HubSpotStart(c *gin.Context) {
+	clientID := os.Getenv("HUBSPOT_CLIENT_ID")
+	if clientID == "" {
+		c.String(http.StatusInternalServerError, "missing HUBSPOT_CLIENT_ID")
+		return
 	}
+
+	// HubSpot region base (default global). Set to app-eu1.hubspot.com if you’re in EU.
+	authHost := os.Getenv("HUBSPOT_AUTH_HOST")
+	if authHost == "" {
+		authHost = "app.hubspot.com"
+	}
+
+	redirect := strings.TrimRight(os.Getenv("OAUTH_REDIRECT_BASE_URL"), "/") + "/oauth/hubspot/callback"
+	if redirect == "" || !strings.HasPrefix(redirect, "http") {
+		c.String(http.StatusInternalServerError, "missing or invalid OAUTH_REDIRECT_BASE_URL")
+		return
+	}
+
+	// Scopes come from env (space- or comma-separated are both accepted here).
+	scopeEnv := os.Getenv("HUBSPOT_SCOPES")
+	if scopeEnv == "" {
+		// Minimal set we discussed; change in .env if you need more
+		scopeEnv = "oauth crm.objects.contacts.read crm.objects.contacts.write crm.objects.owners.read crm.schemas.contacts.read"
+	}
+	scopes := strings.Fields(strings.ReplaceAll(scopeEnv, ",", " "))
+
+	v := url.Values{}
+	v.Set("client_id", clientID)
+	v.Set("redirect_uri", redirect)
+	v.Set("response_type", "code")
+	v.Set("scope", strings.Join(scopes, " "))
+	// (optional) use a static state or a CSRF token you store in a cookie/session
+	v.Set("state", "hubspot_oauth")
+
+	authURL := fmt.Sprintf("https://%s/oauth/authorize?%s", authHost, v.Encode())
 	c.Redirect(http.StatusFound, authURL)
 }
 
-// ---- Callback ----
+// HubSpotCallback handles the OAuth redirect, exchanges code for tokens,
+// and stores the refresh token in DB.
+func (h *HubHandlers) HubSpotCallback(c *gin.Context) {
+	if h.DB == nil {
+		// this is the error you were seeing — now we ensure we never call the handler without DB wired
+		c.String(http.StatusInternalServerError, "DB not initialized for HubSpot handlers")
+		return
+	}
 
-type hubSpotTokenResp struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int64  `json:"expires_in"`
-	TokenType    string `json:"token_type"`
-}
-
-func HubSpotCallback(c *gin.Context) {
 	code := c.Query("code")
 	if code == "" {
-		c.String(http.StatusBadRequest, "missing ?code")
+		c.String(http.StatusBadRequest, "missing code")
 		return
 	}
 
 	clientID := os.Getenv("HUBSPOT_CLIENT_ID")
 	clientSecret := os.Getenv("HUBSPOT_CLIENT_SECRET")
-	redirectURI := os.Getenv("HUBSPOT_REDIRECT_URI")
-
-	if clientID == "" || clientSecret == "" || redirectURI == "" {
-		c.String(http.StatusBadRequest, "missing HubSpot env (client id/secret/redirect)")
+	if clientID == "" || clientSecret == "" {
+		c.String(http.StatusInternalServerError, "missing HUBSPOT_CLIENT_ID or HUBSPOT_CLIENT_SECRET")
 		return
 	}
+
+	redirect := strings.TrimRight(os.Getenv("OAUTH_REDIRECT_BASE_URL"), "/") + "/oauth/hubspot/callback"
+	tokenURL := "https://api.hubapi.com/oauth/v1/token"
 
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("client_id", clientID)
 	form.Set("client_secret", clientSecret)
-	form.Set("redirect_uri", redirectURI)
+	form.Set("redirect_uri", redirect)
 	form.Set("code", code)
 
-	req, _ := http.NewRequest("POST", "https://api.hubapi.com/oauth/v1/token", bytes.NewBufferString(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
+	req, _ := http.NewRequest("POST", tokenURL, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	resp, err := http.DefaultClient.Do(req.WithContext(ctx))
 	if err != nil {
-		c.String(http.StatusBadGateway, "token exchange failed: %v", err)
+		c.String(http.StatusBadGateway, "token exchange error: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode/100 != 2 {
-		var body bytes.Buffer
-		body.ReadFrom(resp.Body)
-		c.String(resp.StatusCode, "token exchange error: %s", body.String())
+		b, _ := io.ReadAll(resp.Body)
+		c.String(http.StatusBadGateway, "token exchange failed: %s", string(b))
 		return
 	}
 
-	var t hubSpotTokenResp
-	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
+	var payload struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		c.String(http.StatusBadGateway, "decode token response failed: %v", err)
 		return
 	}
 
-	// Persist the refresh_token. Adjust this to your app’s user logic.
-	if db == nil {
-		c.String(http.StatusInternalServerError, "db not initialized for hubspot handlers")
+	// Upsert into app_user by email. You likely have middleware that knows the
+	// signed-in app “user email”. If not yet wired, fallback to a single-user mode.
+	userEmail := c.GetString("user_email")
+	if userEmail == "" {
+		// single-user demo fallback; replace with your auth identity
+		userEmail = os.Getenv("DEMO_OWNER_EMAIL")
+	}
+	if userEmail == "" {
+		c.String(http.StatusBadRequest, "no user identity to store HubSpot token (set DEMO_OWNER_EMAIL or wire auth)")
 		return
 	}
 
-	if err := upsertHubSpotToken(db, t.RefreshToken); err != nil {
-		c.String(http.StatusInternalServerError, "saving token failed: %v", err)
+	_, err = h.DB.Exec(`
+		INSERT INTO app_user (email, hubspot_refresh_token, created_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (email)
+		DO UPDATE SET hubspot_refresh_token = EXCLUDED.hubspot_refresh_token
+	`, userEmail, payload.RefreshToken)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "failed to save token: %v", err)
 		return
 	}
 
-	// Success page
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.String(200, `<h2>HubSpot connected 🎉</h2><p>You can close this tab.</p>`)
-}
-
-func upsertHubSpotToken(db *sql.DB, refresh string) error {
-	if strings.TrimSpace(refresh) == "" {
-		return errors.New("empty refresh token")
+	// Done — send user back to the Connect page
+	base := strings.TrimRight(os.Getenv("APP_BASE_URL"), "/")
+	if base == "" {
+		base = "/"
 	}
-
-	// Strategy: attach it to the most-recent app_user row (for single-user demos).
-	// If you have a session user, replace this with your own lookup.
-	type row struct {
-		ID string
-	}
-	var r row
-	err := db.QueryRow(`SELECT id FROM app_user ORDER BY created_at DESC LIMIT 1`).Scan(&r.ID)
-	if err != nil {
-		return fmt.Errorf("load app_user: %w", err)
-	}
-
-	_, err = db.Exec(`UPDATE app_user SET hubspot_refresh_token = $1 WHERE id = $2`, refresh, r.ID)
-	if err != nil {
-		return fmt.Errorf("update token: %w", err)
-	}
-	_, _ = db.Exec(`UPDATE app_user SET updated_at = $1 WHERE id = $2`, time.Now(), r.ID)
-	return nil
+	c.Redirect(http.StatusFound, base+"/connect?hubspot=connected")
 }
