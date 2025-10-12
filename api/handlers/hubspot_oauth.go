@@ -148,5 +148,10 @@ func (h *HubHandlers) HubSpotCallback(c *gin.Context) {
 	if base == "" {
 		base = "/"
 	}
-	c.Redirect(http.StatusFound, base+"/connect?hubspot=connected")
+	redirectTo := os.Getenv("POST_CONNECT_REDIRECT")
+	if redirectTo == "" {
+		redirectTo = "/" // default to your chat UI
+	}
+
+	c.Redirect(http.StatusFound, redirectTo)
 }
