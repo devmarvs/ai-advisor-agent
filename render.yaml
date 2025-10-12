@@ -1,3 +1,4 @@
+
 services:
   - type: web
     name: ai-advisor-agent
@@ -8,9 +9,7 @@ services:
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: ai-agent-postgres
-          property: connectionString
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -32,25 +31,3 @@ services:
           property: url
       - key: CRON_TOKEN
         sync: false
-
-  - type: pserv
-    name: ai-agent-migrations
-    rootDir: infra
-    env: docker
-    dockerCommand: >
-      bash -lc "psql $DATABASE_URL -f migrations/0001_init.sql &&
-                psql $DATABASE_URL -f migrations/0002_indexes.sql &&
-                psql $DATABASE_URL -f migrations/0003_task_queue_pg.sql"
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: ai-agent-postgres
-          property: connectionString
-    autoDeploy: false
-
-  - type: postgres
-    name: ai-agent-postgres
-    plan: standard
-    previewPlan: starter
-    databaseName: aiagent
-    user: aiagent

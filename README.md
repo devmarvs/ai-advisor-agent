@@ -1,1 +1,1 @@
-# AI Advisor Agent — Combined (API + Embedded Worker + Home Page)
+# AI Advisor Agent — Combined (No pgvector)

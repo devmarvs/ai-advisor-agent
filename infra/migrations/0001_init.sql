@@ -1,4 +1,4 @@
-CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE app_user (
@@ -18,7 +18,7 @@ CREATE TABLE instruction (
 );
 CREATE TABLE instruction_embedding (
   instruction_id BIGINT REFERENCES instruction(id) ON DELETE CASCADE,
-  embedding VECTOR(3072)
+  embedding JSONB
 );
 
 CREATE TABLE email (
@@ -37,7 +37,7 @@ CREATE TABLE email (
 );
 CREATE TABLE email_embedding (
   email_id BIGINT REFERENCES email(id) ON DELETE CASCADE,
-  embedding VECTOR(3072)
+  embedding JSONB
 );
 
 CREATE TABLE contact (
@@ -60,7 +60,7 @@ CREATE TABLE note (
 );
 CREATE TABLE note_embedding (
   note_id BIGINT REFERENCES note(id) ON DELETE CASCADE,
-  embedding VECTOR(3072)
+  embedding JSONB
 );
 
 CREATE TABLE meeting (
