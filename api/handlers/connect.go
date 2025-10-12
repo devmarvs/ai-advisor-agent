@@ -2,35 +2,32 @@ package handlers
 
 import (
 	"fmt"
-	"html/template"
-	"net/http"
 	"net/url"
 	"os"
+
+	"github.com/gin-gonic/gin"
 )
 
-func ConnectPage(w http.ResponseWriter, r *http.Request) {
+// Gin-compatible handler
+func ConnectPage(c *gin.Context) {
 	clientID := os.Getenv("HUBSPOT_CLIENT_ID")
 	redirectURI := os.Getenv("HUBSPOT_REDIRECT_URI")
 	scopes := os.Getenv("HUBSPOT_SCOPES")
-	authBase := os.Getenv("HUBSPOT_AUTH_BASE")
+	authBase := os.Getenv("HUBSPOT_AUTH_BASE") // e.g., https://app-eu1.hubspot.com/oauth/authorize
 
-	// Build query parameters dynamically
 	q := url.Values{}
 	q.Set("client_id", clientID)
 	q.Set("redirect_uri", redirectURI)
 	q.Set("scope", scopes)
-	q.Set("state", "connect-"+r.RemoteAddr) // small CSRF token
+	q.Set("state", "connect-"+c.ClientIP())
 
 	authURL := fmt.Sprintf("%s?%s", authBase, q.Encode())
 
-	// Simple HTML for the connect page
-	tmpl := template.Must(template.New("connect").Parse(`
-		<h1>Connect Your Accounts</h1>
-		<p><a href="{{.HubSpotURL}}">Connect HubSpot</a></p>
+	html := fmt.Sprintf(`
+		<h1>Connect your accounts</h1>
+		<p><a href="%s">Connect HubSpot</a></p>
 		<p><a href="/oauth/google/start">Connect Google (Gmail + Calendar)</a></p>
-	`))
+	`, authURL)
 
-	_ = tmpl.Execute(w, map[string]interface{}{
-		"HubSpotURL": authURL,
-	})
+	c.Data(200, "text/html; charset=utf-8", []byte(html))
 }
