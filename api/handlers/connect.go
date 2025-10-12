@@ -8,26 +8,56 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Gin-compatible handler
+// ConnectPage renders a super simple HTML page with links to begin OAuth flows.
+// The HubSpot link is sourced from HUBSPOT_AUTH_URL if present, otherwise we
+// assemble a correct authorize URL from the individual env vars.
 func ConnectPage(c *gin.Context) {
-	clientID := os.Getenv("HUBSPOT_CLIENT_ID")
-	redirectURI := os.Getenv("HUBSPOT_REDIRECT_URI")
-	scopes := os.Getenv("HUBSPOT_SCOPES")
-	authBase := os.Getenv("HUBSPOT_AUTH_BASE") // e.g., https://app-eu1.hubspot.com/oauth/authorize
+	hubspotURL := os.Getenv("HUBSPOT_AUTH_URL")
+	if hubspotURL == "" {
+		// Build a safe default using the standard authorize endpoint.
+		clientID := os.Getenv("HUBSPOT_CLIENT_ID")
+		redirectURI := os.Getenv("HUBSPOT_REDIRECT_URI")
+		scopes := os.Getenv("HUBSPOT_SCOPES") // space-separated list
+		portalID := os.Getenv("HUBSPOT_PORTAL_ID")
 
-	q := url.Values{}
-	q.Set("client_id", clientID)
-	q.Set("redirect_uri", redirectURI)
-	q.Set("scope", scopes)
-	q.Set("state", "connect-"+c.ClientIP())
+		if clientID != "" && redirectURI != "" && scopes != "" {
+			u, _ := url.Parse("https://app.hubspot.com/oauth/authorize")
+			q := u.Query()
+			q.Set("client_id", clientID)
+			q.Set("redirect_uri", redirectURI)
+			q.Set("response_type", "code")
+			// HubSpot accepts scopes as a space-separated string in the query.
+			q.Set("scope", scopes)
+			// Optional but recommended: pin to a portal to skip the chooser and stay in OAuth
+			if portalID != "" {
+				q.Set("portalId", portalID)
+			}
+			// Force consent screen if already installed previously
+			q.Set("prompt", "consent")
+			// Optional state
+			q.Set("state", "hubspot_oauth")
+			u.RawQuery = q.Encode()
+			hubspotURL = u.String()
+		}
+	}
 
-	authURL := fmt.Sprintf("%s?%s", authBase, q.Encode())
+	googleURL := "/oauth/google/start" // whatever you already have wired for Google
 
-	html := fmt.Sprintf(`
+	c.Header("Content-Type", "text/html; charset=utf-8")
+
+	if hubspotURL == "" {
+		// If we could not build a URL, show a helpful message.
+		c.String(200, `
+			<h1>Connect your accounts</h1>
+			<p><strong>HubSpot</strong>: Missing env. Set HUBSPOT_AUTH_URL (or HUBSPOT_CLIENT_ID, HUBSPOT_REDIRECT_URI, HUBSPOT_SCOPES) and refresh.</p>
+			<p><a href="%s">Connect Google (Gmail + Calendar)</a></p>
+		`, googleURL)
+		return
+	}
+
+	c.String(200, fmt.Sprintf(`
 		<h1>Connect your accounts</h1>
 		<p><a href="%s">Connect HubSpot</a></p>
-		<p><a href="/oauth/google/start">Connect Google (Gmail + Calendar)</a></p>
-	`, authURL)
-
-	c.Data(200, "text/html; charset=utf-8", []byte(html))
+		<p><a href="%s">Connect Google (Gmail + Calendar)</a></p>
+	`, hubspotURL, googleURL))
 }

@@ -27,8 +27,8 @@ func SetupRouter() *gin.Engine {
 	// OAuth routes (to add below)
 	r.GET("/oauth/google/start", handlers.GoogleStart())
 	r.GET("/oauth/google/callback", handlers.GoogleCallback(db))
-	r.GET("/oauth/hubspot/start", handlers.HubSpotStart())
-	r.GET("/oauth/hubspot/callback", handlers.HubSpotCallback(db))
+	r.GET("/oauth/hubspot/start", handlers.HubSpotStart)
+	r.GET("/oauth/hubspot/callback", handlers.HubSpotCallback)
 	r.GET("/logout", func(c *gin.Context) { auth.Logout(c) })
 
 	// Authed

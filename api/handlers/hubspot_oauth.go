@@ -1,149 +1,150 @@
 package handlers
 
 import (
-	"context"
+	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	"aiagentapi/auth"
-
 	"github.com/gin-gonic/gin"
 )
 
-// -----------------------------------------------------------------------------
-// HubSpot OAuth Start
-// -----------------------------------------------------------------------------
-func HubSpotStart() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Required environment variables
-		clientID := os.Getenv("HUBSPOT_CLIENT_ID")
-		base := strings.TrimRight(os.Getenv("OAUTH_REDIRECT_BASE_URL"), "/")
-		if clientID == "" || base == "" {
-			c.String(http.StatusInternalServerError, "Missing HUBSPOT_CLIENT_ID or OAUTH_REDIRECT_BASE_URL")
-			return
-		}
+// If your project exposes the DB differently, tweak this.
+var db *sql.DB
 
-		// Region-safe auth base (defaults to US; use https://app-eu1.hubspot.com for EU)
-		authBase := os.Getenv("HUBSPOT_AUTH_BASE")
-		if authBase == "" {
-			authBase = "https://app.hubspot.com"
-		}
-
-		// Safe scopes — these are valid and supported by HubSpot
-		scopes := os.Getenv("HUBSPOT_SCOPES")
-		if strings.TrimSpace(scopes) == "" {
-			scopes = "crm.objects.contacts.read crm.objects.contacts.write crm.objects.owners.read crm.schemas.contacts.read"
-		}
-		scopeParam := strings.Join(strings.Fields(scopes), " ")
-
-		redirect := base + "/oauth/hubspot/callback"
-
-		params := url.Values{}
-		params.Set("client_id", clientID)
-		params.Set("redirect_uri", redirect)
-		params.Set("scope", scopeParam)
-		params.Set("response_type", "code")
-
-		// Redirect to HubSpot OAuth
-		authURL := fmt.Sprintf("%s/oauth/authorize?%s", authBase, params.Encode())
-		c.Redirect(http.StatusTemporaryRedirect, authURL)
-	}
+// Inject a db from main or wherever you initialize it.
+func InitHubSpotHandlersDatabase(d *sql.DB) {
+	db = d
 }
 
-// -----------------------------------------------------------------------------
-// HubSpot OAuth Callback
-// -----------------------------------------------------------------------------
-func HubSpotCallback(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		code := c.Query("code")
-		if code == "" {
-			c.String(http.StatusBadRequest, "Missing code")
-			return
-		}
-
-		base := strings.TrimRight(os.Getenv("OAUTH_REDIRECT_BASE_URL"), "/")
+// HubSpotStart simply redirects to the assembled authorize URL.
+// Useful for /oauth/hubspot/start routes.
+func HubSpotStart(c *gin.Context) {
+	authURL := os.Getenv("HUBSPOT_AUTH_URL")
+	if authURL == "" {
+		// Fallback build (same logic used in ConnectPage)
 		clientID := os.Getenv("HUBSPOT_CLIENT_ID")
-		clientSecret := os.Getenv("HUBSPOT_CLIENT_SECRET")
-		if clientID == "" || clientSecret == "" || base == "" {
-			c.String(http.StatusInternalServerError, "Missing HubSpot OAuth env vars")
+		redirectURI := os.Getenv("HUBSPOT_REDIRECT_URI")
+		scopes := os.Getenv("HUBSPOT_SCOPES")
+		portalID := os.Getenv("HUBSPOT_PORTAL_ID")
+		if clientID == "" || redirectURI == "" || scopes == "" {
+			c.String(http.StatusBadRequest, "HubSpot env not configured")
 			return
 		}
-
-		redirect := base + "/oauth/hubspot/callback"
-
-		form := url.Values{}
-		form.Set("grant_type", "authorization_code")
-		form.Set("client_id", clientID)
-		form.Set("client_secret", clientSecret)
-		form.Set("redirect_uri", redirect)
-		form.Set("code", code)
-
-		req, _ := http.NewRequest("POST", "https://api.hubapi.com/oauth/v1/token", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			c.String(http.StatusInternalServerError, fmt.Sprintf("Request error: %v", err))
-			return
+		u, _ := url.Parse("https://app.hubspot.com/oauth/authorize")
+		q := u.Query()
+		q.Set("client_id", clientID)
+		q.Set("redirect_uri", redirectURI)
+		q.Set("response_type", "code")
+		q.Set("scope", scopes)
+		if portalID != "" {
+			q.Set("portalId", portalID)
 		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			c.String(http.StatusBadGateway, fmt.Sprintf("Token exchange failed: %s", string(body)))
-			return
-		}
-
-		var tok struct {
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
-			ExpiresIn    int64  `json:"expires_in"`
-			TokenType    string `json:"token_type"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
-			c.String(http.StatusInternalServerError, fmt.Sprintf("Decode error: %v", err))
-			return
-		}
-
-		if tok.RefreshToken == "" {
-			c.String(http.StatusInternalServerError, "No refresh token returned by HubSpot")
-			return
-		}
-
-		// Example of saving the token for the current user
-		user, err := auth.GetCurrentUser(c, db)
-		if err != nil {
-			c.String(http.StatusUnauthorized, "Not authenticated")
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, err = db.ExecContext(ctx,
-			`UPDATE app_user SET hubspot_refresh_token=$1 WHERE id=$2`,
-			tok.RefreshToken, user.ID,
-		)
-		if err != nil {
-			c.String(http.StatusInternalServerError, fmt.Sprintf("DB save error: %v", err))
-			return
-		}
-
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.String(http.StatusOK, `
-<!doctype html>
-<html>
-  <head><meta charset="utf-8"><title>HubSpot connected</title></head>
-  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px">
-    <h1>✅ HubSpot connected!</h1>
-    <p>Your refresh token was stored successfully.</p>
-  </body>
-</html>`)
+		q.Set("prompt", "consent")
+		q.Set("state", "hubspot_oauth")
+		u.RawQuery = q.Encode()
+		authURL = u.String()
 	}
+	c.Redirect(http.StatusFound, authURL)
+}
+
+// ---- Callback ----
+
+type hubSpotTokenResp struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+	TokenType    string `json:"token_type"`
+}
+
+func HubSpotCallback(c *gin.Context) {
+	code := c.Query("code")
+	if code == "" {
+		c.String(http.StatusBadRequest, "missing ?code")
+		return
+	}
+
+	clientID := os.Getenv("HUBSPOT_CLIENT_ID")
+	clientSecret := os.Getenv("HUBSPOT_CLIENT_SECRET")
+	redirectURI := os.Getenv("HUBSPOT_REDIRECT_URI")
+
+	if clientID == "" || clientSecret == "" || redirectURI == "" {
+		c.String(http.StatusBadRequest, "missing HubSpot env (client id/secret/redirect)")
+		return
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("client_id", clientID)
+	form.Set("client_secret", clientSecret)
+	form.Set("redirect_uri", redirectURI)
+	form.Set("code", code)
+
+	req, _ := http.NewRequest("POST", "https://api.hubapi.com/oauth/v1/token", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.String(http.StatusBadGateway, "token exchange failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		var body bytes.Buffer
+		body.ReadFrom(resp.Body)
+		c.String(resp.StatusCode, "token exchange error: %s", body.String())
+		return
+	}
+
+	var t hubSpotTokenResp
+	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
+		c.String(http.StatusBadGateway, "decode token response failed: %v", err)
+		return
+	}
+
+	// Persist the refresh_token. Adjust this to your app’s user logic.
+	if db == nil {
+		c.String(http.StatusInternalServerError, "db not initialized for hubspot handlers")
+		return
+	}
+
+	if err := upsertHubSpotToken(db, t.RefreshToken); err != nil {
+		c.String(http.StatusInternalServerError, "saving token failed: %v", err)
+		return
+	}
+
+	// Success page
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(200, `<h2>HubSpot connected 🎉</h2><p>You can close this tab.</p>`)
+}
+
+func upsertHubSpotToken(db *sql.DB, refresh string) error {
+	if strings.TrimSpace(refresh) == "" {
+		return errors.New("empty refresh token")
+	}
+
+	// Strategy: attach it to the most-recent app_user row (for single-user demos).
+	// If you have a session user, replace this with your own lookup.
+	type row struct {
+		ID string
+	}
+	var r row
+	err := db.QueryRow(`SELECT id FROM app_user ORDER BY created_at DESC LIMIT 1`).Scan(&r.ID)
+	if err != nil {
+		return fmt.Errorf("load app_user: %w", err)
+	}
+
+	_, err = db.Exec(`UPDATE app_user SET hubspot_refresh_token = $1 WHERE id = $2`, refresh, r.ID)
+	if err != nil {
+		return fmt.Errorf("update token: %w", err)
+	}
+	_, _ = db.Exec(`UPDATE app_user SET updated_at = $1 WHERE id = $2`, time.Now(), r.ID)
+	return nil
 }
