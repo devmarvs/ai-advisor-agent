@@ -30,6 +30,7 @@ func SetupRouter() *gin.Engine {
 	r.GET("/oauth/hubspot/start", handlers.HubSpotStart())
 	r.GET("/oauth/hubspot/callback", handlers.HubSpotCallback(db))
 	r.GET("/logout", func(c *gin.Context) { auth.Logout(c) })
+	r.GET("/connect", handlers.ConnectPage)
 
 	// Authed
 	authed := r.Group("/")
