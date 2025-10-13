@@ -2,7 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -14,7 +16,17 @@ import (
 
 func SetupRouter() *gin.Engine {
 	dsn := os.Getenv("DATABASE_URL")
-	db, _ := sql.Open("pgx", dsn)
+	if dsn == "" {
+		log.Fatal("DATABASE_URL must be set")
+	}
+
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		log.Fatalf("failed to open database: %v", err)
+	}
+	db.SetMaxOpenConns(15)
+	db.SetMaxIdleConns(15)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	worker.Start(db)
 

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"aiagentapi/auth"
 )
 
 // HubHandlers carries shared deps (e.g., DB) for HubSpot handlers
@@ -123,13 +125,9 @@ func (h *HubHandlers) HubSpotCallback(c *gin.Context) {
 		return
 	}
 
-	// Use signed-in user email if you have auth; otherwise demo fallback.
-	userEmail := c.GetString("user_email")
-	if userEmail == "" {
-		userEmail = os.Getenv("DEMO_OWNER_EMAIL")
-	}
-	if userEmail == "" {
-		c.String(http.StatusBadRequest, "no user identity to store HubSpot token (set DEMO_OWNER_EMAIL or wire auth)")
+	user, err := auth.GetCurrentUser(c, h.DB)
+	if err != nil {
+		c.String(http.StatusUnauthorized, "not authenticated: %v", err)
 		return
 	}
 
@@ -138,7 +136,7 @@ func (h *HubHandlers) HubSpotCallback(c *gin.Context) {
 		VALUES ($1, $2, NOW())
 		ON CONFLICT (email)
 		DO UPDATE SET hubspot_refresh_token = EXCLUDED.hubspot_refresh_token
-	`, userEmail, payload.RefreshToken)
+	`, user.Email, payload.RefreshToken)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "failed to save token: %v", err)
 		return
