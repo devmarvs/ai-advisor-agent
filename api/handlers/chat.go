@@ -99,7 +99,7 @@ func Messages(db *sql.DB) gin.HandlerFunc {
 		userID := user.ID
 
 		ctx := c.Request.Context()
-		msgs, err := storage.ListRecentMessages(ctx, db, userID, 200)
+		msgs, err := storage.ListRecentMessages(ctx, db, 20)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to load history"})
 			return
