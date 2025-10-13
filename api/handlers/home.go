@@ -86,18 +86,26 @@ async function loadHistory(){
     if(!r.ok){ throw new Error("messages fetch failed"); }
     const j = await r.json();
     historyBox.innerHTML = "";
-    (j.messages || []).forEach(m => {
-      const d = document.createElement("div");
-      const role = (m.role || m.Role || "assistant");
-      const content = (m.content || m.Content || "");
-      d.className = "bubble " + role;
-      d.textContent = content;
-      historyBox.appendChild(d);
+    // Expect { groups: [{ date: "YYYY-MM-DD", items: [{role,content,created_at}...] }, ...] }
+    (j.groups || []).forEach(g => {
+      const h = document.createElement("div");
+      h.className = "bubble";
+      h.textContent = g.date;
+      historyBox.appendChild(h);
+
+      (g.items || []).forEach(m => {
+        const d = document.createElement("div");
+        const role = (m.role || "assistant");
+        d.className = "bubble " + role;
+        d.textContent = m.content || "";
+        historyBox.appendChild(d);
+      });
     });
   }catch(e){
     historyBox.innerHTML = '<div class="bubble">Failed to load history.</div>';
   }
 }
+
 
 async function send(){
   const v = input.value.trim();

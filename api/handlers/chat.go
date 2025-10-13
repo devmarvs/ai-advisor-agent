@@ -23,10 +23,7 @@ type chatMessage struct {
 	UserID    string    `json:"user_id"`
 }
 
-var chatHistory = make([]chatMessage, 0, 1024)
-
-// Chat returns the POST /chat handler using DB + OpenAI and a simple RAG-lite search.
-// It will NOT crash if tables are missing; it just answers without context.
+// Chat handles POST /chat: saves user message, produces assistant reply, and saves it.
 func Chat(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, err := auth.GetCurrentUser(c, db)
@@ -44,20 +41,15 @@ func Chat(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		now := time.Now()
-		chatHistory = append(chatHistory, chatMessage{
-			Role:      "user",
-			Content:   req.Message,
-			CreatedAt: now,
-			UserID:    userID,
-		})
-
-		// Demo: enqueue a "tick" task for the worker (non-blocking)
-		_, _ = storage.Enqueue(c.Request.Context(), db, userID, "demo_chat_tick",
-			map[string]any{"at": now.UTC().Format(time.RFC3339)}, nil, nil)
-
-		// RAG-lite: try to pull a few snippets from email / notes / contacts
 		ctx := c.Request.Context()
+
+		// Save the user's message
+		if err := storage.SaveMessage(ctx, db, userID, "user", req.Message); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save message"})
+			return
+		}
+
+		// RAG-lite: try to pull snippets
 		snips := findSnippets(ctx, db, userID, req.Message, 6)
 
 		sys := "You are an assistant for a financial advisor.\n" +
@@ -65,21 +57,74 @@ func Chat(db *sql.DB) gin.HandlerFunc {
 			"If a user asks to act (email, schedule, log note), describe the next steps you will perform."
 
 		userPrompt := buildUserPrompt(req.Message, snips)
-
 		reply := callLLM(ctx, sys, userPrompt)
 
-		chatHistory = append(chatHistory, chatMessage{
-			Role:      "assistant",
-			Content:   reply,
-			CreatedAt: time.Now(),
-			UserID:    userID,
-		})
+		// Save assistant message
+		if err := storage.SaveMessage(ctx, db, userID, "assistant", reply); err != nil {
+			// still return reply to UI even if save fails
+			c.JSON(http.StatusOK, gin.H{"reply": reply, "snippets": snips, "warning": "failed to save assistant message"})
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{"reply": reply, "snippets": snips})
 	}
 }
 
-// buildUserPrompt formats the user question plus a compact list of snippets.
+// Messages (grouped) handles GET /messages and returns groups by day for History tab.
+func Messages(db *sql.DB) gin.HandlerFunc {
+	type item struct {
+		Role      string    `json:"role"`
+		Content   string    `json:"content"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	type group struct {
+		Date  string `json:"date"` // YYYY-MM-DD (user local time not applied here; UTC date)
+		Items []item `json:"items"`
+	}
+
+	return func(c *gin.Context) {
+		user, err := auth.GetCurrentUser(c, db)
+		if err != nil || user == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+			return
+		}
+		userID := user.ID
+
+		ctx := c.Request.Context()
+		msgs, err := storage.ListRecentMessages(ctx, db, userID, 200)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to load history"})
+			return
+		}
+
+		// Group by UTC date (you can adapt to user tz if needed)
+		groups := make([]group, 0, 8)
+		var cur group
+		var lastDate string
+
+		for _, m := range msgs {
+			d := m.CreatedAt.UTC().Format("2006-01-02")
+			if d != lastDate {
+				if lastDate != "" {
+					groups = append(groups, cur)
+				}
+				cur = group{Date: d, Items: []item{}}
+				lastDate = d
+			}
+			cur.Items = append(cur.Items, item{
+				Role:      m.Role,
+				Content:   m.Content,
+				CreatedAt: m.CreatedAt,
+			})
+		}
+		if lastDate != "" {
+			groups = append(groups, cur)
+		}
+
+		c.JSON(200, gin.H{"groups": groups})
+	}
+}
+
 func buildUserPrompt(question string, snips []string) string {
 	var b strings.Builder
 	if len(snips) > 0 {
@@ -102,7 +147,6 @@ func buildUserPrompt(question string, snips []string) string {
 	return b.String()
 }
 
-// callLLM sends to OpenAI if OPENAI_API_KEY is set; otherwise returns a fallback.
 func callLLM(ctx context.Context, system, user string) string {
 	key := os.Getenv("OPENAI_API_KEY")
 	model := os.Getenv("OPENAI_MODEL")
@@ -132,8 +176,6 @@ func callLLM(ctx context.Context, system, user string) string {
 	return strings.TrimSpace(resp.Choices[0].Message.Content)
 }
 
-// findSnippets performs best-effort text search across likely tables.
-// It won't error if tables/columns don't exist; it just returns fewer results.
 func findSnippets(ctx context.Context, db *sql.DB, userID, q string, limit int) []string {
 	q = strings.TrimSpace(q)
 	if q == "" {
@@ -143,7 +185,6 @@ func findSnippets(ctx context.Context, db *sql.DB, userID, q string, limit int) 
 	type row struct{ S string }
 	snips := make([]string, 0, limit)
 
-	// helper to run a query safely
 	run := func(sqlStr string, args ...any) {
 		if len(snips) >= limit {
 			return
@@ -168,15 +209,12 @@ func findSnippets(ctx context.Context, db *sql.DB, userID, q string, limit int) 
 
 	like := "%" + q + "%"
 
-	// Try emails table variants
 	run(`SELECT subject || ' — ' || left(coalesce(body_text,snippet,''), 300)
 	     FROM email WHERE user_id=$1 AND (subject ILIKE $2 OR snippet ILIKE $2 OR coalesce(body_text,'') ILIKE $2)
 	     ORDER BY sent_at DESC LIMIT 5`, userID, like)
 
-	// Try notes table
 	run(`SELECT left(body, 300) FROM note WHERE user_id=$1 AND body ILIKE $2 ORDER BY created_at DESC LIMIT 5`, userID, like)
 
-	// Try contacts table
 	run(`SELECT coalesce(first_name,'') || ' ' || coalesce(last_name,'') || ' — ' || coalesce(email,'')
 	     FROM contact WHERE user_id=$1 AND (email ILIKE $2 OR first_name ILIKE $2 OR last_name ILIKE $2) LIMIT 3`, userID, like)
 
@@ -184,27 +222,4 @@ func findSnippets(ctx context.Context, db *sql.DB, userID, q string, limit int) 
 		return snips[:limit]
 	}
 	return snips
-}
-
-// Messages returns simple recent messages for the signed-in user from the in-memory feed.
-// This allows the UI History tab to work. Replace with DB later if desired.
-func Messages() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		user, _ := auth.GetCurrentUser(c, nil) // if your GetCurrentUser needs DB, pass it in
-		var uid string
-		if user != nil {
-			uid = user.ID
-		}
-		type msg struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		}
-		out := make([]msg, 0, 200)
-		for _, m := range chatHistory {
-			if uid == "" || m.UserID == uid {
-				out = append(out, msg{Role: m.Role, Content: m.Content})
-			}
-		}
-		c.JSON(200, gin.H{"messages": out})
-	}
 }
