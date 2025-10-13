@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sashabaranov/go-openai"
+	openai "github.com/sashabaranov/go-openai"
 
 	"aiagentapi/auth"
 	"aiagentapi/storage"
@@ -36,7 +36,9 @@ func Chat(db *sql.DB) gin.HandlerFunc {
 		}
 		userID := user.ID
 
-		var req struct{ Message string ` + "`json:\"message\"`" + ` }
+		var req struct {
+			Message string `json:"message"`
+		}
 		if err := c.BindJSON(&req); err != nil || strings.TrimSpace(req.Message) == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "message required"})
 			return
@@ -51,15 +53,16 @@ func Chat(db *sql.DB) gin.HandlerFunc {
 		})
 
 		// Demo: enqueue a "tick" task for the worker (non-blocking)
-		_, _ = storage.Enqueue(c.Request.Context(), db, userID, "demo_chat_tick", map[string]any{"at": now.UTC().Format(time.RFC3339)}, nil, nil)
+		_, _ = storage.Enqueue(c.Request.Context(), db, userID, "demo_chat_tick",
+			map[string]any{"at": now.UTC().Format(time.RFC3339)}, nil, nil)
 
 		// RAG-lite: try to pull a few snippets from email / notes / contacts
 		ctx := c.Request.Context()
 		snips := findSnippets(ctx, db, userID, req.Message, 6)
 
-		sys := ` + "`" + `You are an assistant for a financial advisor. 
-Use the provided context snippets when relevant. 
-If a user asks to act (email, schedule, log note), describe the next steps you will perform.` + "`" + `
+		sys := "You are an assistant for a financial advisor.\n" +
+			"Use the provided context snippets when relevant.\n" +
+			"If a user asks to act (email, schedule, log note), describe the next steps you will perform."
 
 		userPrompt := buildUserPrompt(req.Message, snips)
 
@@ -82,9 +85,13 @@ func buildUserPrompt(question string, snips []string) string {
 	if len(snips) > 0 {
 		b.WriteString("Context snippets:\n")
 		for i, s := range snips {
-			if i >= 6 { break }
+			if i >= 6 {
+				break
+			}
 			b.WriteString("- ")
-			if len(s) > 400 { s = s[:400] + "…" }
+			if len(s) > 400 {
+				s = s[:400] + "…"
+			}
 			b.WriteString(s)
 			b.WriteString("\n")
 		}
@@ -99,7 +106,9 @@ func buildUserPrompt(question string, snips []string) string {
 func callLLM(ctx context.Context, system, user string) string {
 	key := os.Getenv("OPENAI_API_KEY")
 	model := os.Getenv("OPENAI_MODEL")
-	if model == "" { model = "gpt-4o-mini" }
+	if model == "" {
+		model = "gpt-4o-mini"
+	}
 
 	if strings.TrimSpace(key) == "" {
 		return "I received your message. To enable AI answers, set OPENAI_API_KEY in the environment."
@@ -127,21 +136,29 @@ func callLLM(ctx context.Context, system, user string) string {
 // It won't error if tables/columns don't exist; it just returns fewer results.
 func findSnippets(ctx context.Context, db *sql.DB, userID, q string, limit int) []string {
 	q = strings.TrimSpace(q)
-	if q == "" { return nil }
+	if q == "" {
+		return nil
+	}
 
 	type row struct{ S string }
 	snips := make([]string, 0, limit)
 
 	// helper to run a query safely
 	run := func(sqlStr string, args ...any) {
-		if len(snips) >= limit { return }
+		if len(snips) >= limit {
+			return
+		}
 		ctx2, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		rows, err := db.QueryContext(ctx2, sqlStr, args...)
-		if err != nil { return }
+		if err != nil {
+			return
+		}
 		defer rows.Close()
 		for rows.Next() {
-			if len(snips) >= limit { break }
+			if len(snips) >= limit {
+				break
+			}
 			var r row
 			if err := rows.Scan(&r.S); err == nil && strings.TrimSpace(r.S) != "" {
 				snips = append(snips, r.S)
@@ -152,16 +169,16 @@ func findSnippets(ctx context.Context, db *sql.DB, userID, q string, limit int) 
 	like := "%" + q + "%"
 
 	// Try emails table variants
-	run(` + "`" + `SELECT subject || ' — ' || left(coalesce(body_text,snippet,''), 300)
+	run(`SELECT subject || ' — ' || left(coalesce(body_text,snippet,''), 300)
 	     FROM email WHERE user_id=$1 AND (subject ILIKE $2 OR snippet ILIKE $2 OR coalesce(body_text,'') ILIKE $2)
-	     ORDER BY sent_at DESC LIMIT 5` + "`" + `, userID, like)
+	     ORDER BY sent_at DESC LIMIT 5`, userID, like)
 
 	// Try notes table
-	run(` + "`" + `SELECT left(body, 300) FROM note WHERE user_id=$1 AND body ILIKE $2 ORDER BY created_at DESC LIMIT 5` + "`" + `, userID, like)
+	run(`SELECT left(body, 300) FROM note WHERE user_id=$1 AND body ILIKE $2 ORDER BY created_at DESC LIMIT 5`, userID, like)
 
 	// Try contacts table
-	run(` + "`" + `SELECT coalesce(first_name,'') || ' ' || coalesce(last_name,'') || ' — ' || coalesce(email,'')
-	     FROM contact WHERE user_id=$1 AND (email ILIKE $2 OR first_name ILIKE $2 OR last_name ILIKE $2) LIMIT 3` + "`" + `, userID, like)
+	run(`SELECT coalesce(first_name,'') || ' ' || coalesce(last_name,'') || ' — ' || coalesce(email,'')
+	     FROM contact WHERE user_id=$1 AND (email ILIKE $2 OR first_name ILIKE $2 OR last_name ILIKE $2) LIMIT 3`, userID, like)
 
 	if len(snips) > limit {
 		return snips[:limit]
