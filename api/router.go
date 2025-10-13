@@ -50,6 +50,7 @@ func SetupRouter() *gin.Engine {
 	authed.Use(auth.RequireAuth())
 	authed.GET("/", handlers.Home())
 	authed.POST("/chat", handlers.Chat(db))
+	authed.GET("/messages", handlers.Messages())
 	authed.POST("/internal/cron/tick", handlers.CronTick(db))
 
 	return r

@@ -6,6 +6,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Home serves the chat UI with History and New Thread actions.
+// - History button loads /messages (no hardcoded bubbles)
+// - +New thread clears the current conversation view (client-side)
 func Home() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<!doctype html>
@@ -15,178 +18,132 @@ func Home() gin.HandlerFunc {
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AI Advisor Agent</title>
   <style>
-    :root{
-      --bg:#f7f8fb; --panel:#fff; --muted:#6b7280; --text:#0f172a; --border:#e5e7eb;
-      --primary:#0ea5e9; --chip:#f1f5f9; --chipText:#0f172a;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,Segoe UI,Arial}
-    .app{max-width:980px;margin:0 auto;min-height:100%;display:grid;grid-template-columns:1fr;gap:16px;padding:16px}
-    @media (min-width:900px){ .app{grid-template-columns:360px minmax(0,1fr)} }
-
-    /* Left chat panel */
-    .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;min-height:70vh;overflow:hidden}
-    .panel-header{padding:20px 20px 8px;border-bottom:1px solid var(--border)}
-    .title{font-size:24px;font-weight:700;margin:0}
-    .tabs{display:flex;gap:8px;margin-top:12px}
-    .tab{padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:#fff;font-weight:600}
-    .tab.active{background:#eef6ff;border-color:#bfdbfe;color:#1d4ed8}
-
-    .section{padding:16px 20px;border-bottom:1px solid var(--border)}
-    .dim{color:var(--muted);font-size:14px}
-
-    .chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-    .chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);color:var(--chipText);
-          padding:10px 12px;border-radius:12px;font-weight:600;border:1px solid var(--border)}
-    .chip .face{width:18px;height:18px;border-radius:50%;background:#d1d5db;display:inline-block}
-
-    .thread{padding:10px 20px 0 20px;display:flex;flex-direction:column;gap:14px;overflow:auto}
-    .card{border:1px solid var(--border);border-radius:16px;background:#fff;padding:16px}
-    .card .time{color:var(--muted);font-weight:600;margin-bottom:6px}
-    .card .title{font-size:20px;margin:0 0 8px 0}
-    .avatars{display:flex;gap:4px}
-    .avatars .a{width:22px;height:22px;border-radius:50%;background:#cbd5e1;border:2px solid #fff}
-
-    /* Composer */
-    .composer{margin-top:auto;border-top:1px solid var(--border);padding:12px;background:linear-gradient(#fff,#fff)}
-    .composer-inner{display:flex;gap:10px;align-items:center}
-    .input{flex:1;border:1px solid var(--border);border-radius:14px;padding:12px 14px;font-size:16px}
-    .btn{border:0;background:var(--primary);color:#fff;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
-
-    /* Right column (optional preview stream) */
-    .right{display:flex;flex-direction:column;gap:12px}
-    .bubble{background:#f1f5f9;border:1px solid var(--border);border-radius:12px;padding:12px;white-space:pre-wrap}
-    .muted{color:var(--muted)}
-    .hint{font-size:13px;color:var(--muted)}
-    .pill{display:inline-block;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:#fff;font-weight:600}
+    :root { --bg:#0b0c10; --fg:#e5e7eb; --muted:#9ca3af; --card:#111827; --line:#1f2937; --accent:#0ea5e9; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--fg); }
+    header { padding: 16px 20px; border-bottom: 1px solid var(--line); display:flex; align-items:center; gap:16px; }
+    header .tabs { display:flex; gap:8px; }
+    header .tab { padding:8px 12px; border-radius:10px; border:1px solid var(--line); cursor:pointer; color: var(--muted); background:#0d1117; }
+    header .tab.active { background: var(--accent); color:white; border-color: transparent; }
+    .wrap { display:flex; max-width: 1100px; margin: 0 auto; }
+    .sidebar { width: 260px; border-right: 1px solid var(--line); padding: 16px; min-height: calc(100vh - 58px); }
+    .main { flex:1; padding: 16px; }
+    .history { display:none; gap:8px; flex-direction: column; }
+    .history.show { display:flex; }
+    .msglist { display:flex; flex-direction: column; gap: 8px; padding-bottom: 88px; }
+    .bubble { padding:12px 14px; border-radius:12px; line-height:1.5; white-space:pre-wrap; background: var(--card); border:1px solid var(--line); }
+    .bubble.user { background:#1f2937; }
+    .bubble.assistant { background:#0e7490; }
+    .composer { position: fixed; left: 280px; right: 20px; bottom: 20px; display:flex; gap:8px; }
+    .composer input { flex:1; padding:12px 14px; border-radius:10px; border:1px solid var(--line); background: var(--card); color: var(--fg); }
+    .composer button { padding:12px 16px; border-radius:10px; border:0; background: var(--accent); color:white; cursor:pointer; }
+    @media (max-width: 880px) { .sidebar { display:none; } .composer { left: 20px; } }
   </style>
 </head>
 <body>
-  <main class="app">
-    <!-- LEFT: Chat panel, matches the product screenshot closely -->
-    <section class="panel">
-      <div class="panel-header">
-        <h1 class="title">Ask Anything</h1>
-        <div class="tabs">
-          <span class="tab active">Chat</span>
-          <span class="tab">History</span>
-          <span class="tab">+ New thread</span>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="dim">Context set to all meetings</div>
-        <div class="dim" style="margin-top:4px;">11:17am – May 13, 2025</div>
-      </div>
-
-      <div class="section">
-        <p style="margin:0 0 8px 0">I can answer questions about any Jump meeting. What do you want to know?</p>
-        <div class="chip-row">
-          <span class="chip">
-            Find meetings I’ve had with
-            <span class="face"></span> Bill
-            and <span class="face"></span> Tim
-            this month
-          </span>
-        </div>
-      </div>
-
-      <div class="section">
-        <p style="margin:0">
-          Sure, here are some recent meetings that you, Bill, and Tim all attended. I found 2 in May. <span class="pill">⎯⎯⎯</span>
-        </p>
-      </div>
-
-      <div class="thread" id="thread">
-        <div class="card">
-          <div class="time">8 Thursday</div>
-          <h3 class="title">Quarterly All Team Meeting</h3>
-          <div class="avatars">
-            <span class="a"></span><span class="a"></span><span class="a"></span><span class="a"></span>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="time">16 Friday</div>
-          <h3 class="title">Strategy review</h3>
-          <div class="avatars">
-            <span class="a"></span><span class="a"></span>
-          </div>
-        </div>
-
-        <div class="hint">I can summarize these meetings, schedule a follow up, and more!</div>
-      </div>
-
-      <div class="composer">
-        <div class="composer-inner">
-          <input id="msg" class="input" placeholder="Ask anything about your meetings..." />
-          <button id="sendBtn" class="btn">Send</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- RIGHT: reply area (shows what the backend returns) -->
-    <section class="right">
-      <div class="bubble muted">Replies</div>
-      <div id="reply" class="bubble">No messages yet.</div>
-      <div class="hint">The input sends a POST to <code>/chat</code>. The agent’s JSON reply is rendered here.</div>
-    </section>
-  </main>
+  <header>
+    <strong>AI Advisor Agent</strong>
+    <div class="tabs">
+      <button class="tab active" id="tab-chat">Chat</button>
+      <button class="tab" id="tab-history">History</button>
+      <button class="tab" id="tab-new">+ New thread</button>
+    </div>
+  </header>
+  <div class="wrap">
+    <aside class="sidebar">
+      <div class="history" id="history"></div>
+    </aside>
+    <main class="main">
+      <div id="msgs" class="msglist"></div>
+    </main>
+  </div>
+  <div class="composer">
+    <input id="msg" type="text" placeholder="Ask about clients or say e.g. 'Schedule an appointment with Sara Smith next week'"/>
+    <button id="sendBtn">Send</button>
+  </div>
 
 <script>
-const $ = (s)=>document.querySelector(s);
-const thread = $("#thread");
-const reply = $("#reply");
-const api = window.location.origin;
+const $ = s => document.querySelector(s);
+const msgs = $("#msgs");
+const historyBox = $("#history");
+const tabChat = $("#tab-chat");
+const tabHistory = $("#tab-history");
+const tabNew = $("#tab-new");
+const input = $("#msg");
+const sendBtn = $("#sendBtn");
 
-function addUserBubble(text){
-  const el = document.createElement("div");
-  el.className = "bubble";
-  el.textContent = text;
-  thread.appendChild(el);
-  thread.scrollTop = thread.scrollHeight;
+function addBubble(role, text){
+  const d = document.createElement("div");
+  d.className = "bubble " + role;
+  d.textContent = text;
+  msgs.appendChild(d);
+  window.scrollTo(0, document.body.scrollHeight);
 }
 
-function addAssistantBubble(text){
-  const el = document.createElement("div");
-  el.className = "bubble";
-  el.textContent = text;
-  thread.appendChild(el);
-  thread.scrollTop = thread.scrollHeight;
-}
-
-async function send(){
-  const btn = $("#sendBtn");
-  const input = $("#msg");
-  const value = input.value.trim();
-  if(!value){ input.focus(); return }
-  addUserBubble(value);
-  btn.disabled = true;
-  reply.textContent = "Sending...";
-
+async function loadHistory(){
   try{
-    const res = await fetch(api + "/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: value })
+    const r = await fetch("/messages");
+    if(!r.ok){ throw new Error("messages fetch failed"); }
+    const j = await r.json();
+    historyBox.innerHTML = "";
+    (j.messages || []).forEach(m => {
+      const d = document.createElement("div");
+      const role = (m.role || m.Role || "assistant");
+      const content = (m.content || m.Content || "");
+      d.className = "bubble " + role;
+      d.textContent = content;
+      historyBox.appendChild(d);
     });
-    const text = await res.text();
-    reply.textContent = text;
-    addAssistantBubble(text);
-    input.value = "";
-    input.focus();
   }catch(e){
-    reply.textContent = "Error: " + e;
-    addAssistantBubble("Error: " + e);
-  }finally{
-    btn.disabled = false;
+    historyBox.innerHTML = '<div class="bubble">Failed to load history.</div>';
   }
 }
 
-$("#sendBtn").addEventListener("click", send);
-$("#msg").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); send(); } });
+async function send(){
+  const v = input.value.trim();
+  if(!v) return;
+  sendBtn.disabled = true;
+  addBubble("user", v);
+  input.value = "";
+  try{
+    const r = await fetch("/chat", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ message: v })});
+    const j = await r.json();
+    if(j.error){ addBubble("assistant", "Error: " + j.error); return; }
+    // ensure plain text, not JSON blob
+    const txt = typeof j.reply === "string" ? j.reply : JSON.stringify(j.reply);
+    addBubble("assistant", txt);
+  }catch(e){
+    addBubble("assistant", "Error: " + e.message);
+  }finally{
+    sendBtn.disabled = false;
+  }
+}
+
+// Tabs behavior
+tabChat.addEventListener("click", () => {
+  tabChat.classList.add("active");
+  tabHistory.classList.remove("active");
+  $("#history").classList.remove("show");
+});
+tabHistory.addEventListener("click", async () => {
+  tabHistory.classList.add("active");
+  tabChat.classList.remove("active");
+  await loadHistory();
+  $("#history").classList.add("show");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+tabNew.addEventListener("click", () => {
+  // Clear current conversation on the UI (client-side new thread)
+  msgs.innerHTML = "";
+  tabChat.classList.add("active");
+  tabHistory.classList.remove("active");
+  $("#history").classList.remove("show");
+  addBubble("assistant", "Started a new thread. How can I help?");
+});
+
+// Enter to send
+input.addEventListener("keydown", (e) => { if(e.key === "Enter"){ e.preventDefault(); send(); } });
+sendBtn.addEventListener("click", send);
 </script>
 </body>
 </html>`))

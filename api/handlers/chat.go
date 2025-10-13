@@ -185,3 +185,26 @@ func findSnippets(ctx context.Context, db *sql.DB, userID, q string, limit int) 
 	}
 	return snips
 }
+
+// Messages returns simple recent messages for the signed-in user from the in-memory feed.
+// This allows the UI History tab to work. Replace with DB later if desired.
+func Messages() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, _ := auth.GetCurrentUser(c, nil) // if your GetCurrentUser needs DB, pass it in
+		var uid string
+		if user != nil {
+			uid = user.ID
+		}
+		type msg struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}
+		out := make([]msg, 0, 200)
+		for _, m := range chatHistory {
+			if uid == "" || m.UserID == uid {
+				out = append(out, msg{Role: m.Role, Content: m.Content})
+			}
+		}
+		c.JSON(200, gin.H{"messages": out})
+	}
+}
