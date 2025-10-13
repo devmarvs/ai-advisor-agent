@@ -44,8 +44,12 @@ func Chat(db *sql.DB) gin.HandlerFunc {
 		ctx := c.Request.Context()
 
 		// Save the user's message
-		if err := storage.SaveMessage(ctx, db, userID, "user", req.Message); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save message"})
+		if _, err := storage.SaveMessage(ctx, db, "user", req.Message); err != nil {
+			// Return the detailed cause to Render logs (and UI JSON for debugging)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":  "failed to save message",
+				"detail": err.Error(),
+			})
 			return
 		}
 
@@ -60,9 +64,13 @@ func Chat(db *sql.DB) gin.HandlerFunc {
 		reply := callLLM(ctx, sys, userPrompt)
 
 		// Save assistant message
-		if err := storage.SaveMessage(ctx, db, userID, "assistant", reply); err != nil {
-			// still return reply to UI even if save fails
-			c.JSON(http.StatusOK, gin.H{"reply": reply, "snippets": snips, "warning": "failed to save assistant message"})
+		if _, err := storage.SaveMessage(ctx, db, "assistant", reply); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"reply":    reply,
+				"snippets": snips,
+				"warning":  "failed to save assistant message",
+				"detail":   err.Error(),
+			})
 			return
 		}
 

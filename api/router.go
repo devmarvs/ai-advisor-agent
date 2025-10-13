@@ -11,6 +11,7 @@ import (
 
 	"aiagentapi/auth"
 	"aiagentapi/handlers"
+	"aiagentapi/storage"
 	"aiagentapi/worker"
 )
 
@@ -29,6 +30,10 @@ func SetupRouter() *gin.Engine {
 	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	worker.Start(db)
+
+	if err := storage.EnsureSchema(db); err != nil {
+		log.Fatalf("failed to ensure schema: %v", err)
+	}
 
 	r := gin.Default()
 
