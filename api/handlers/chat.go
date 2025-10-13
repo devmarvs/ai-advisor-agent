@@ -96,7 +96,6 @@ func Messages(db *sql.DB) gin.HandlerFunc {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 			return
 		}
-		userID := user.ID
 
 		ctx := c.Request.Context()
 		msgs, err := storage.ListRecentMessages(ctx, db, 20)
