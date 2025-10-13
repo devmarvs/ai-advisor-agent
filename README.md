@@ -141,14 +141,14 @@ Access the app locally at
 
 | Page | Preview |
 |------|----------|
-| **1. Connect Page** | ![Connect Page](<img width="800" height="605" alt="Screenshot 2025-10-13 at 7 03 10 AM" src="https://github.com/user-attachments/assets/ed255c0b-f51b-43b9-a263-75ead1c5c27f" />
-) |
-| **2. Chat Page (Initial Message)** | ![Chat UI](<img width="1599" height="769" alt="Screenshot 2025-10-13 at 7 01 25 AM" src="https://github.com/user-attachments/assets/370995f5-e353-48c3-9bb0-55f843c3030b" />
-) |
-| **3. Chat History View** | ![Chat History](<img width="502" height="711" alt="Screenshot 2025-10-13 at 7 01 45 AM" src="https://github.com/user-attachments/assets/70da548e-a939-40ca-a379-d2642c96dd99" />
-) |
-| **4. New Thread Example** | ![New Thread](<img width="1606" height="778" alt="Screenshot 2025-10-13 at 7 01 53 AM" src="https://github.com/user-attachments/assets/1411a2f4-2160-4000-915f-c0fb6144179f" />
-) |
+| **1. Connect Page** | <img width="800" height="605" alt="Screenshot 2025-10-13 at 7 03 10 AM" src="https://github.com/user-attachments/assets/ed255c0b-f51b-43b9-a263-75ead1c5c27f" />
+ |
+| **2. Chat Page (Initial Message)** | <img width="1599" height="769" alt="Screenshot 2025-10-13 at 7 01 25 AM" src="https://github.com/user-attachments/assets/370995f5-e353-48c3-9bb0-55f843c3030b" />
+|
+| **3. Chat History View** | <img width="502" height="711" alt="Screenshot 2025-10-13 at 7 01 45 AM" src="https://github.com/user-attachments/assets/70da548e-a939-40ca-a379-d2642c96dd99" />
+ |
+| **4. New Thread Example** | <img width="1606" height="778" alt="Screenshot 2025-10-13 at 7 01 53 AM" src="https://github.com/user-attachments/assets/1411a2f4-2160-4000-915f-c0fb6144179f" />
+|
 
 > 💡 Place your screenshots in a `/screenshots` folder and rename them to match the filenames above.
 
