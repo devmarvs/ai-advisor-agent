@@ -1,6 +1,7 @@
 # 🤖 AI Advisor Agent
 
 AI Advisor Agent is an intelligent assistant that integrates with **Google (Gmail + Calendar)** and **HubSpot CRM** to help financial advisors or client-facing professionals manage communications, schedule meetings, and maintain proactive client engagement.
+> **Status:** Work in progress – expect active development and frequent changes.
 
 The agent combines **LLM reasoning**, **tool-calling**, and **contextual memory** from your connected accounts to understand clients, automate follow-ups, and answer natural language questions such as:
 
