@@ -15,7 +15,7 @@ type LLM struct {
 func NewLLM() *LLM {
 	key := os.Getenv("OPENAI_API_KEY")
 	model := os.Getenv("OPENAI_MODEL")
-	if model == "":
+	if model == "" {
 		model = "gpt-4o-mini"
 	}
 	return &LLM{client: openai.NewClient(key), model: model}
