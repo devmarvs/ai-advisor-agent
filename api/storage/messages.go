@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -20,39 +21,52 @@ var (
 	ensureErr  error
 )
 
-// EnsureSchema creates the agent_message table if it doesn't exist.
+// EnsureSchema creates/updates the agent_message table if it doesn't exist.
 // Safe to call multiple times; it will run only once.
 func EnsureSchema(db *sql.DB) error {
 	ensureOnce.Do(func() {
 		const q = `
 CREATE TABLE IF NOT EXISTS agent_message (
   id BIGSERIAL PRIMARY KEY,
+  user_id UUID,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  tool_calls JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  thread_id TEXT
 );`
 		_, ensureErr = db.Exec(q)
+		if ensureErr != nil {
+			return
+		}
+		_, _ = db.Exec(`ALTER TABLE agent_message ADD COLUMN IF NOT EXISTS user_id UUID`)
+		_, _ = db.Exec(`ALTER TABLE agent_message ADD COLUMN IF NOT EXISTS tool_calls JSONB`)
+		_, _ = db.Exec(`ALTER TABLE agent_message ADD COLUMN IF NOT EXISTS thread_id TEXT`)
 	})
 	return ensureErr
 }
 
-func SaveMessage(ctx context.Context, db *sql.DB, role, content string) (int64, error) {
+func SaveMessage(ctx context.Context, db *sql.DB, userID, role, content string) (int64, error) {
 	if err := EnsureSchema(db); err != nil {
 		return 0, fmt.Errorf("ensure schema: %w", err)
 	}
 
 	const q = `
-INSERT INTO agent_message (role, content)
-VALUES ($1, $2)
+INSERT INTO agent_message (user_id, role, content)
+VALUES ($1, $2, $3)
 RETURNING id;`
 	var id int64
-	if err := db.QueryRowContext(ctx, q, role, content).Scan(&id); err != nil {
+	var userArg any = userID
+	if strings.TrimSpace(userID) == "" {
+		userArg = nil
+	}
+	if err := db.QueryRowContext(ctx, q, userArg, role, content).Scan(&id); err != nil {
 		return 0, fmt.Errorf("insert message: %w", err)
 	}
 	return id, nil
 }
 
-func LoadMessages(ctx context.Context, db *sql.DB, limit int) ([]Message, error) {
+func LoadMessages(ctx context.Context, db *sql.DB, userID string, limit int) ([]Message, error) {
 	if err := EnsureSchema(db); err != nil {
 		return nil, fmt.Errorf("ensure schema: %w", err)
 	}
@@ -64,10 +78,15 @@ func LoadMessages(ctx context.Context, db *sql.DB, limit int) ([]Message, error)
 	const q = `
 SELECT id, role, content, created_at
 FROM agent_message
+WHERE user_id IS NOT DISTINCT FROM $1
 ORDER BY created_at DESC, id DESC
-LIMIT $1;`
+LIMIT $2;`
 
-	rows, err := db.QueryContext(ctx, q, limit)
+	var userArg any = userID
+	if strings.TrimSpace(userID) == "" {
+		userArg = nil
+	}
+	rows, err := db.QueryContext(ctx, q, userArg, limit)
 	if err != nil {
 		return nil, fmt.Errorf("select messages: %w", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,6 +37,14 @@ func SetupRouter() *gin.Engine {
 	}
 
 	r := gin.Default()
+	webRoot := resolveWebRoot()
+	chatTemplate := ""
+	if webRoot == "" {
+		log.Println("web assets not found; chat UI will not render")
+	} else {
+		chatTemplate = filepath.Join(webRoot, "templates", "chat.html")
+		r.Static("/static", filepath.Join(webRoot, "static"))
+	}
 
 	// Public
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
@@ -53,10 +62,24 @@ func SetupRouter() *gin.Engine {
 	// Authed
 	authed := r.Group("/")
 	authed.Use(auth.RequireAuth())
-	authed.GET("/", handlers.Home())
+	authed.GET("/", handlers.Home(chatTemplate))
 	authed.POST("/chat", handlers.Chat(db))
 	authed.GET("/messages", handlers.Messages(db))
 	authed.POST("/internal/cron/tick", handlers.CronTick(db))
 
 	return r
+}
+
+func resolveWebRoot() string {
+	candidates := []string{
+		"web",
+		filepath.Join("..", "web"),
+	}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }

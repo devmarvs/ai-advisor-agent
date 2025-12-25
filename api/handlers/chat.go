@@ -16,13 +16,6 @@ import (
 	"aiagentapi/storage"
 )
 
-type chatMessage struct {
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
-	UserID    string    `json:"user_id"`
-}
-
 // Chat handles POST /chat: saves user message, produces assistant reply, and saves it.
 func Chat(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -44,7 +37,7 @@ func Chat(db *sql.DB) gin.HandlerFunc {
 		ctx := c.Request.Context()
 
 		// Save the user's message
-		if _, err := storage.SaveMessage(ctx, db, "user", req.Message); err != nil {
+		if _, err := storage.SaveMessage(ctx, db, userID, "user", req.Message); err != nil {
 			// Return the detailed cause to Render logs (and UI JSON for debugging)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":  "failed to save message",
@@ -64,7 +57,7 @@ func Chat(db *sql.DB) gin.HandlerFunc {
 		reply := callLLM(ctx, sys, userPrompt)
 
 		// Save assistant message
-		if _, err := storage.SaveMessage(ctx, db, "assistant", reply); err != nil {
+		if _, err := storage.SaveMessage(ctx, db, userID, "assistant", reply); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"reply":    reply,
 				"snippets": snips,
@@ -98,7 +91,7 @@ func Messages(db *sql.DB) gin.HandlerFunc {
 		}
 
 		ctx := c.Request.Context()
-		msgs, err := storage.ListRecentMessages(ctx, db, 20)
+		msgs, err := storage.ListRecentMessages(ctx, db, user.ID, 20)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "failed to load history"})
 			return
@@ -128,7 +121,7 @@ func Messages(db *sql.DB) gin.HandlerFunc {
 			groups = append(groups, cur)
 		}
 
-		c.JSON(200, gin.H{"groups": groups})
+		c.JSON(200, gin.H{"groups": groups, "messages": msgs})
 	}
 }
 

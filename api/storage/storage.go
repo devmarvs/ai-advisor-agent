@@ -7,12 +7,12 @@ import (
 
 // ListRecentMessages returns the most recent messages (newest last).
 // This powers the "History" view and lets the chat preload context.
-func ListRecentMessages(ctx context.Context, db *sql.DB, limit int) ([]Message, error) {
+func ListRecentMessages(ctx context.Context, db *sql.DB, userID string, limit int) ([]Message, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
-	items, err := LoadMessages(ctx, db, limit)
+	items, err := LoadMessages(ctx, db, userID, limit)
 	if err != nil {
 		return nil, err
 	}
