@@ -3,5 +3,8 @@
     "api/index.go": {
       "includeFiles": "infra/migrations/*.sql"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.go" }
+  ]
 }
