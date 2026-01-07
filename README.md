@@ -45,11 +45,14 @@ The agent uses LLM reasoning and account context to answer questions such as:
 ```
 ai-advisor-agent-scaffold/
 │
-├── api/
+├── api/                  # Vercel serverless entrypoint
+│   └── index.go
+│
+├── server/
 │   ├── handlers/         # HTTP endpoints (chat, auth, google)
 │   ├── storage/          # Database helper functions
 │   ├── router.go         # Route definitions
-│   └── main.go           # Entry point
+│   └── main.go           # Local entry point
 │
 ├── web/
 │   ├── templates/        # HTML UI templates
@@ -113,13 +116,14 @@ CREATE TABLE IF NOT EXISTS agent_message (
 ### 3. Install Dependencies
 
 ```bash
+cd server
 go mod tidy
 ```
 
 ### 4. Run Locally
 
 ```bash
-cd api
+cd server
 go run .
 ```
 
@@ -161,7 +165,7 @@ Place your screenshots in a `screenshots/` folder and rename them to match the f
 ## Deployment
 
 - Set environment variables in your deployment platform.
-- Build and run the API from `api/` with `go build -o server .` and `./server`.
+- Build and run the API from `server/` with `go build -o server .` and `./server`.
 - Set `OAUTH_REDIRECT_BASE_URL` to your public base URL (for example, `https://your-app.vercel.app`).
 - Migrations are applied automatically on startup. Set `MIGRATIONS_DIR` if the default path isn't found.
 

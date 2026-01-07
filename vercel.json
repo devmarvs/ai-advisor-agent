@@ -1,0 +1,9 @@
+{
+  "functions": {
+    "api/index.go": {
+      "includeFiles": [
+        "infra/migrations/*.sql"
+      ]
+    }
+  }
+}
