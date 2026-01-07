@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	app "aiagentapi"
+	app "aiagentapi/app"
 )
 
 var router = app.SetupRouter()

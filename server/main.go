@@ -3,10 +3,12 @@ package main
 import (
 	"log"
 	"os"
+
+	"aiagentapi/app"
 )
 
 func main() {
-	r := SetupRouter()
+	r := app.SetupRouter()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
