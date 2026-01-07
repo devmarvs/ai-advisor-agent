@@ -16,7 +16,7 @@ func CronTick(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		// TODO: enqueue polling tasks, etc.
+		// No-op placeholder until background tasks are wired up.
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
 }

@@ -13,12 +13,20 @@ type LLM struct {
 }
 
 func NewLLM() *LLM {
-	key := os.Getenv("OPENAI_API_KEY")
-	model := os.Getenv("OPENAI_MODEL")
+	key := os.Getenv("GROQ_API_KEY")
+	model := os.Getenv("GROQ_MODEL")
 	if model == "" {
-		model = "gpt-4o-mini"
+		model = "llama-3.1-8b-instant"
 	}
-	return &LLM{client: openai.NewClient(key), model: model}
+
+	baseURL := os.Getenv("GROQ_BASE_URL")
+	if baseURL == "" {
+		baseURL = "https://api.groq.com/openai/v1"
+	}
+
+	cfg := openai.DefaultConfig(key)
+	cfg.BaseURL = baseURL
+	return &LLM{client: openai.NewClientWithConfig(cfg), model: model}
 }
 
 func (l *LLM) Complete(ctx context.Context, system, user string) (string, error) {

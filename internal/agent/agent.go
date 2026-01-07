@@ -17,9 +17,9 @@ type Config struct {
 
 func DefaultSystemPrompt() string {
 	return strings.TrimSpace(`You are a helpful AI assistant for a financial advisor.
-You can answer questions about the user's clients using email and HubSpot data.
+You can answer questions about the user's clients using email and calendar data.
 When you need data, you can call tools by returning JSON: {"tool":"name","args":{...}}.
-Tools available: search_context, hubspot_find_contact, hubspot_upsert_contact, hubspot_log_note, gmail_send, calendar_find_slots, calendar_create_event.
+Tools available: search_context, gmail_send, calendar_find_slots, calendar_create_event.
 If no tool is needed, just answer.`)
 }
 
@@ -72,23 +72,6 @@ func (a *Agent) execTool(ctx context.Context, userID string, call toolCall) (str
 		if err != nil { return "", err }
 		b, _ := json.MarshalIndent(docs, "", "  ")
 		return string(b), nil
-	case "hubspot_find_contact":
-		key, _ := call.Args["query"].(string)
-		c, err := a.cfg.Tools.FindContact(ctx, userID, key)
-		if err != nil { return "", err }
-		b, _ := json.MarshalIndent(c, "", "  ")
-		return string(b), nil
-	case "hubspot_upsert_contact":
-		b, _ := json.Marshal(call.Args); var c Contact; _ = json.Unmarshal(b, &c)
-		res, err := a.cfg.Tools.UpsertContact(ctx, userID, c)
-		if err != nil { return "", err }
-		out, _ := json.MarshalIndent(res, "", "  ")
-		return string(out), nil
-	case "hubspot_log_note":
-		contactID, _ := call.Args["contact_id"].(string)
-		text, _ := call.Args["text"].(string)
-		err := a.cfg.Tools.LogNote(ctx, userID, contactID, text)
-		return "ok", err
 	case "gmail_send":
 		to, _ := call.Args["to"].(string)
 		subject, _ := call.Args["subject"].(string)

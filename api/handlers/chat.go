@@ -38,7 +38,7 @@ func Chat(db *sql.DB) gin.HandlerFunc {
 
 		// Save the user's message
 		if _, err := storage.SaveMessage(ctx, db, userID, "user", req.Message); err != nil {
-			// Return the detailed cause to Render logs (and UI JSON for debugging)
+			// Return the detailed cause to server logs (and UI JSON for debugging)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":  "failed to save message",
 				"detail": err.Error(),
@@ -148,17 +148,24 @@ func buildUserPrompt(question string, snips []string) string {
 }
 
 func callLLM(ctx context.Context, system, user string) string {
-	key := os.Getenv("OPENAI_API_KEY")
-	model := os.Getenv("OPENAI_MODEL")
+	key := os.Getenv("GROQ_API_KEY")
+	model := os.Getenv("GROQ_MODEL")
 	if model == "" {
-		model = "gpt-4o-mini"
+		model = "llama-3.1-8b-instant"
+	}
+
+	baseURL := strings.TrimSpace(os.Getenv("GROQ_BASE_URL"))
+	if baseURL == "" {
+		baseURL = "https://api.groq.com/openai/v1"
 	}
 
 	if strings.TrimSpace(key) == "" {
-		return "I received your message. To enable AI answers, set OPENAI_API_KEY in the environment."
+		return "I received your message. To enable AI answers, set GROQ_API_KEY in the environment."
 	}
 
-	client := openai.NewClient(key)
+	cfg := openai.DefaultConfig(key)
+	cfg.BaseURL = baseURL
+	client := openai.NewClientWithConfig(cfg)
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: model,
 		Messages: []openai.ChatCompletionMessage{

@@ -17,7 +17,11 @@ import (
 
 func GoogleStart() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		base := os.Getenv("OAUTH_REDIRECT_BASE_URL")
+		base := strings.TrimRight(os.Getenv("OAUTH_REDIRECT_BASE_URL"), "/")
+		if base == "" || !strings.HasPrefix(base, "http") {
+			c.String(http.StatusInternalServerError, "missing or invalid OAUTH_REDIRECT_BASE_URL")
+			return
+		}
 		redirect := base + "/oauth/google/callback"
 		params := url.Values{}
 		params.Set("client_id", os.Getenv("GOOGLE_CLIENT_ID"))
@@ -42,7 +46,11 @@ func GoogleCallback(db *sql.DB) gin.HandlerFunc {
 			c.String(400, "missing code")
 			return
 		}
-		base := os.Getenv("OAUTH_REDIRECT_BASE_URL")
+		base := strings.TrimRight(os.Getenv("OAUTH_REDIRECT_BASE_URL"), "/")
+		if base == "" || !strings.HasPrefix(base, "http") {
+			c.String(http.StatusInternalServerError, "missing or invalid OAUTH_REDIRECT_BASE_URL")
+			return
+		}
 		redirect := base + "/oauth/google/callback"
 
 		// exchange token

@@ -5,7 +5,6 @@ CREATE TABLE app_user (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   google_refresh_token TEXT,
-  hubspot_refresh_token TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -43,7 +42,6 @@ CREATE TABLE email_embedding (
 CREATE TABLE contact (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID REFERENCES app_user(id) ON DELETE CASCADE,
-  hubspot_id TEXT,
   email TEXT,
   first_name TEXT,
   last_name TEXT,
@@ -53,7 +51,6 @@ CREATE TABLE contact (
 CREATE TABLE note (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID REFERENCES app_user(id) ON DELETE CASCADE,
-  hubspot_id TEXT,
   contact_id BIGINT REFERENCES contact(id) ON DELETE SET NULL,
   body TEXT,
   created_at TIMESTAMPTZ DEFAULT now()

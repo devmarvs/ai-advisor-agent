@@ -30,6 +30,10 @@ func SetupRouter() *gin.Engine {
 	db.SetMaxIdleConns(15)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 
+	if err := storage.ApplyMigrations(db); err != nil {
+		log.Fatalf("failed to apply migrations: %v", err)
+	}
+
 	worker.Start(db)
 
 	if err := storage.EnsureSchema(db); err != nil {
@@ -48,15 +52,11 @@ func SetupRouter() *gin.Engine {
 
 	// Public
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
-	r.GET("/connect", handlers.ConnectPage) // simple page with “Connect Google / Connect HubSpot” buttons
-
-	hub := handlers.NewHubHandlers(db)
+	r.GET("/connect", handlers.ConnectPage) // simple page with a Google OAuth button
 
 	// OAuth routes (to add below)
 	r.GET("/oauth/google/start", handlers.GoogleStart())
 	r.GET("/oauth/google/callback", handlers.GoogleCallback(db))
-	r.GET("/oauth/hubspot/start", hub.HubSpotStart)
-	r.GET("/oauth/hubspot/callback", hub.HubSpotCallback)
 	r.GET("/logout", func(c *gin.Context) { auth.Logout(c) })
 
 	// Authed

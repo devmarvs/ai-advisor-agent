@@ -1,53 +1,20 @@
 package handlers
 
 import (
-	"net/url"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-// ConnectPage renders a centered, minimal page with links to begin OAuth flows.
+// ConnectPage renders a centered, minimal page with a link to begin Google OAuth.
 func ConnectPage(c *gin.Context) {
-	hubspotURL := resolveHubSpotURL()
 	googleURL := "/oauth/google/start"
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.String(200, connectPageHTML(hubspotURL, googleURL))
+	c.String(200, connectPageHTML(googleURL))
 }
 
-func resolveHubSpotURL() string {
-	hubspotURL := os.Getenv("HUBSPOT_AUTH_URL")
-	if hubspotURL != "" {
-		return hubspotURL
-	}
-
-	// Build a safe default if env not provided
-	clientID := os.Getenv("HUBSPOT_CLIENT_ID")
-	redirectURI := os.Getenv("HUBSPOT_REDIRECT_URI")
-	scopes := os.Getenv("HUBSPOT_SCOPES")
-	portalID := os.Getenv("HUBSPOT_PORTAL_ID")
-	if clientID == "" || redirectURI == "" || scopes == "" {
-		return ""
-	}
-
-	u, _ := url.Parse("https://app.hubspot.com/oauth/authorize")
-	q := u.Query()
-	q.Set("client_id", clientID)
-	q.Set("redirect_uri", redirectURI)
-	q.Set("response_type", "code")
-	q.Set("scope", scopes)
-	if portalID != "" {
-		q.Set("portalId", portalID)
-	}
-	q.Set("prompt", "consent")
-	q.Set("state", "hubspot_oauth")
-	u.RawQuery = q.Encode()
-	return u.String()
-}
-
-func connectPageHTML(hubspotURL, googleURL string) string {
+func connectPageHTML(googleURL string) string {
 	const header = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Connect accounts</title>
@@ -68,13 +35,6 @@ p{color:#9ca3af}
 
 	var b strings.Builder
 	b.WriteString(header)
-	if hubspotURL == "" {
-		b.WriteString("    <p><strong>HubSpot</strong> not configured. Set HUBSPOT_AUTH_URL (or HUBSPOT_CLIENT_ID, HUBSPOT_REDIRECT_URI, HUBSPOT_SCOPES) and refresh.</p>\n")
-	} else {
-		b.WriteString(`    <p><a class="btn" href="`)
-		b.WriteString(hubspotURL)
-		b.WriteString(`">Connect HubSpot</a></p>` + "\n")
-	}
 	b.WriteString(`    <p><a class="btn" href="`)
 	b.WriteString(googleURL)
 	b.WriteString(`">Connect Google (Gmail + Calendar)</a></p>` + "\n")
