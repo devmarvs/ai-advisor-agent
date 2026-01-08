@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/index.go": {
-      "includeFiles": "infra/migrations/*.sql"
+      "includeFiles": "../infra/migrations/*.sql"
     }
   },
   "rewrites": [
