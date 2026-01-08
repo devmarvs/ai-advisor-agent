@@ -58,7 +58,7 @@ ai-advisor-agent-scaffold/
 │   ├── templates/        # HTML UI templates
 │   └── static/           # JS/CSS assets
 │
-├── infra/migrations/     # Postgres migrations
+├── api/migrations/       # Postgres migrations (bundled for Vercel)
 ├── .env.example          # Environment variable template
 └── README.md             # This file
 ```
@@ -98,7 +98,7 @@ CRON_TOKEN=change-me
 
 ### 2. Database Schema
 
-Run the migrations in `infra/migrations` (recommended). For a quick local setup, create the minimum tables:
+Run the migrations in `api/migrations` (recommended). For a quick local setup, create the minimum tables:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgcrypto;

@@ -14,7 +14,7 @@ import (
 
 const migrationLockKey = "aiagent_migrations_v1"
 
-// ApplyMigrations runs SQL files from infra/migrations in a safe, repeatable way.
+// ApplyMigrations runs SQL files from the migrations directory in a safe, repeatable way.
 // It uses a Postgres advisory lock to avoid concurrent runners.
 func ApplyMigrations(db *sql.DB) error {
 	dir := resolveMigrationsDir()
@@ -78,8 +78,9 @@ func resolveMigrationsDir() string {
 		}
 	}
 	candidates := []string{
-		filepath.Join("infra", "migrations"),
-		filepath.Join("..", "infra", "migrations"),
+		filepath.Join("migrations"),
+		filepath.Join("api", "migrations"),
+		filepath.Join("..", "api", "migrations"),
 	}
 	for _, candidate := range candidates {
 		if isDir(candidate) {
