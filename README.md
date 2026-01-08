@@ -73,7 +73,14 @@ Create a `.env` file based on `.env.example`:
 
 ```bash
 PORT=8080
-DATABASE_URL=postgres://<user>:<password>@<host>:5432/<dbname>?sslmode=require
+
+DB_HOST=<host>
+DB_PORT=5432
+DB_NAME=<dbname>
+DB_USER=<user>
+DB_PASSWORD=<password>
+DB_SSLMODE=require
+DB_CHANNEL_BINDING=
 
 GROQ_API_KEY=gsk_xxxxx
 GROQ_MODEL=llama-3.1-8b-instant

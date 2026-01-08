@@ -2,9 +2,13 @@ package app
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,9 +21,9 @@ import (
 )
 
 func SetupRouter() *gin.Engine {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		log.Fatal("DATABASE_URL must be set")
+	dsn, err := resolveDatabaseURL()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	db, err := sql.Open("pgx", dsn)
@@ -68,6 +72,48 @@ func SetupRouter() *gin.Engine {
 	authed.POST("/internal/cron/tick", handlers.CronTick(db))
 
 	return r
+}
+
+func resolveDatabaseURL() (string, error) {
+	dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if dsn != "" {
+		return dsn, nil
+	}
+
+	host := strings.TrimSpace(os.Getenv("DB_HOST"))
+	name := strings.TrimSpace(os.Getenv("DB_NAME"))
+	user := strings.TrimSpace(os.Getenv("DB_USER"))
+	password := os.Getenv("DB_PASSWORD")
+	if host == "" || name == "" || user == "" || password == "" {
+		return "", fmt.Errorf("DATABASE_URL or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD must be set")
+	}
+
+	port := strings.TrimSpace(os.Getenv("DB_PORT"))
+	if port == "" {
+		port = "5432"
+	}
+
+	sslmode := strings.TrimSpace(os.Getenv("DB_SSLMODE"))
+	if sslmode == "" {
+		sslmode = "require"
+	}
+
+	q := url.Values{}
+	if sslmode != "" {
+		q.Set("sslmode", sslmode)
+	}
+	if channelBinding := strings.TrimSpace(os.Getenv("DB_CHANNEL_BINDING")); channelBinding != "" {
+		q.Set("channel_binding", channelBinding)
+	}
+
+	u := url.URL{
+		Scheme:   "postgresql",
+		User:     url.UserPassword(user, password),
+		Host:     net.JoinHostPort(host, port),
+		Path:     "/" + name,
+		RawQuery: q.Encode(),
+	}
+	return u.String(), nil
 }
 
 func resolveWebRoot() string {
